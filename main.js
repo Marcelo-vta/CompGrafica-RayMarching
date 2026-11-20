@@ -55,6 +55,7 @@ const uniforms = {
     outlineColor: 0.0, // 28
     backgroundColor2: 0.0, // 29
     backgroundColor3: 0.0, // 30
+    menger: 0, // 31
 }
 
 const uniformsCount = Object.keys(uniforms).length;
@@ -204,6 +205,7 @@ scenesFolder.add({ PrintScene: () => {
     scene += `\t\tshowFloor: ${uniforms.showFloor},\n`;
     scene += `\t\tmandelbulb: ${uniforms.mandelbulb},\n`;
     scene += `\t\tweirdScene: ${uniforms.weirdScene},\n`;
+    scene += `\t\tmenger: ${uniforms.menger},\n`;
     scene += `\t\tfarPlane: ${uniforms.farPlane},\n`;
     scene += `\t\tsoftShadowK: ${uniforms.softShadowK},\n`;
     scene += `\t\tmarchingStep: ${uniforms.marchingStep},\n`;
@@ -227,6 +229,7 @@ uniformsFolder.add(uniforms, 'marchingStep').name("Marching Step").step(0.01).li
 uniformsFolder.add({ ShowFloor: true }, 'ShowFloor').name("Show Floor").listen().onChange( function() { uniforms.showFloor = this.object.ShowFloor ? 1 : 0; });
 uniformsFolder.add({ Mandelbulb: false }, 'Mandelbulb').name("Mandelbulb").listen().onChange( function() { uniforms.mandelbulb = this.object.Mandelbulb ? 1 : 0; });
 uniformsFolder.add({ WeirdScene: false }, 'WeirdScene').name("Weird Scene").listen().onChange( function() { uniforms.weirdScene = this.object.WeirdScene ? 1 : 0; });
+uniformsFolder.add({ Menger: false }, 'Menger').name("Menger Sponge").listen().onChange( function() { uniforms.menger = this.object.Menger ? 1 : 0; });
 
 let shadowsFolder = gui.addFolder("Shadows");
 shadowsFolder.add(uniforms, 'softShadowK').name("Soft Shadow K").step(0.01).listen();
@@ -454,14 +457,14 @@ function generateBackgroundAndSunColor(rgb1, rgb2, rgb3, sun)
 async function getScene(index)
 {
     let backgroundColor, maxMarchingSteps, 
-        showFloor, mandelbulb, weirdScene, 
+        showFloor, mandelbulb, weirdScene, menger, 
         farPlane, softShadowK, marchingStep, 
         outlinePostProcess, outlineWidth, sunColor, backgroundColor2, backgroundColor3;
 
     ({ 
         spheres, boxes, toruses, 
         backgroundColor, maxMarchingSteps, 
-        showFloor, mandelbulb, weirdScene, 
+        showFloor, mandelbulb, weirdScene, menger, 
         farPlane, softShadowK, marchingStep, 
         outlinePostProcess, outlineWidth, sunColor, backgroundColor2, backgroundColor3
     } = await getAvailableScene(index, availableScenes));
@@ -470,6 +473,7 @@ async function getScene(index)
     uniforms.showFloor = showFloor;
     uniforms.mandelbulb = mandelbulb;
     uniforms.weirdScene = weirdScene;
+    uniforms.menger = menger ?? 0;
     uniforms.farPlane = farPlane;
     uniforms.softShadowK = softShadowK;
     uniforms.marchingStep = marchingStep;

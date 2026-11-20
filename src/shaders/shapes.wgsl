@@ -1,18 +1,21 @@
 fn sdf_round_box(p: vec3f, b: vec3f, r: f32, quat: vec4f) -> f32
 {
-  return 0.01;
+  var q = abs(rotate_vector(p, quat)) - b;
+  return length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
 }
 
 fn sdf_sphere(p: vec3f, r: vec4f, quat: vec4f) -> f32
 {
-  return 0.01;
+  // a sphere looks the same from every angle, so quat is not needed
+  return length(p) - r.w;
 }
 
 fn sdf_torus(p: vec3f, r: vec2f, quat: vec4f) -> f32
 {
-  return 0.01;
+  var p_rot = rotate_vector(p, quat);
+  var q = vec2f(length(p_rot.xz) - r.x, p_rot.y);
+  return length(q) - r.y;
 }
-
 fn sdf_mandelbulb(p: vec3f) -> vec2f
 {
   var w = p;
@@ -58,4 +61,30 @@ fn sdf_weird_thing(p_: vec3f, s: f32) -> f32
   }
 
   return 0.3 * abs(p.y) / scale;
+}
+// Menger sponge: start from a cube and, at every level, carve a cross
+// shaped hole through each of the smaller cubes (3x smaller each level)
+fn sdf_menger(p: vec3f, levels: i32) -> f32
+{
+  var q = abs(p) - vec3f(1.0);
+  var d = length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+
+  var size = 1.0;
+  for (var i = 0; i < levels; i = i + 1)
+  {
+    // fold space so every sub cube maps onto the same cell
+    var cell = modc(p * size, vec3f(2.0)) - vec3f(1.0);
+    size = size * 3.0;
+    var r = abs(vec3f(1.0) - 3.0 * abs(cell));
+
+    // distance to the infinite cross (three bars along x, y and z)
+    var bar_xy = max(r.x, r.y);
+    var bar_yz = max(r.y, r.z);
+    var bar_zx = max(r.z, r.x);
+    var cross_d = (min(bar_xy, min(bar_yz, bar_zx)) - 1.0) / size;
+
+    d = max(d, cross_d);
+  }
+
+  return d;
 }

@@ -450,4 +450,33 @@ async function Weird()
     };
 }
 
+async function Menger()
+{
+	return {
+		spheres: [
+			new Shape("Sphere", [-2.3, 0.75, -0.6, 0], [1, 1, 1, 0.45], [0, 0, 0, 0], [0, 0.001, 0.0, 0.0], [0.9, 0.2, 0.15, 0], [0, 0.25, 0, 1.5], [0, 0, 0, 0]),
+			new Shape("Sphere", [2.3, 0.75, -0.6, 0], [1, 1, 1, 0.45], [0, 0, 0, 0], [0, 0.001, 0.0, 0.0], [0.15, 0.45, 0.95, 0], [0, 0.25, 0, -1.5], [0, 0, 0, 0]),
+		],
+		boxes: [
+		],
+		toruses: [
+			new Shape("Torus", [0, 1, 0, 0], [2.0, 0.05, 1, 1], [20, 0, 15, 0], [0, 0.001, 0.0, 0.0], [1, 0.75, 0.2, 0], [0, 0, 0, 0], [0.4, 0, 0.4, 0.6]),
+		],
+		backgroundColor: [0.10196078431372549, 0.44313725490196076, 1],
+		maxMarchingSteps: 150,
+		showFloor: 1,
+		mandelbulb: 0,
+		weirdScene: 0,
+		menger: 1,
+		farPlane: 700,
+		softShadowK: 0.08,
+		marchingStep: 1,
+		outlinePostProcess: 0,
+		outlineWidth: 0.05,
+		sunColor: [0.98, 1, 0.9],
+		backgroundColor2: [0.7, 0.75, 0.85],
+		backgroundColor3: [0.418, 0.394, 0.372],
+	};
+}
+
 export { getAvailableScene };
