@@ -59,8 +59,9 @@ fn op_smooth_intersection(d1: f32, d2: f32, col1: vec3f, col2: vec3f, k: f32) ->
   var h = clamp(0.5 - 0.5 * (d2 - d1) / k_eps, 0.0, 1.0);
   var d = mix(d2, d1, h) + k_eps * h * (1.0 - h);
 
-  // d1 is only a cutting volume, the visible surface keeps the color of d2
-  return vec4f(col2, d);
+  // the visible surface takes the color of whichever shape is defining it (blended by h)
+  var col = mix(col2, col1, h);
+  return vec4f(col, d);
 }
 
 fn op(op: f32, d1: f32, d2: f32, col1: vec3f, col2: vec3f, k: f32) -> vec4f
@@ -183,18 +184,16 @@ fn march(ro: vec3f, rd: vec3f) -> march_output
   var color = vec3f(0.0);
   var march_step = uniforms[22];
 
-  var hit = false;
   var closest = MAX_DIST;
 
   for (var i = 0; i < max_marching_steps; i = i + 1)
   {
       var res = scene(ro + rd * depth);
+      color = res.xyz;
 
       // close enough to a surface: count it as a hit
       if (res.w < EPSILON)
       {
-        color = res.xyz;
-        hit = true;
         break;
       }
 
@@ -204,19 +203,24 @@ fn march(ro: vec3f, rd: vec3f) -> march_output
       // the scene distance is how far we can safely move along the ray
       depth += res.w * march_step;
 
-      if (depth > MAX_DIST)
+      if (depth >= MAX_DIST)
       {
         break;
       }
   }
 
-  if (!hit)
+  // only rays that really escaped the scene count as background.
+  // rays that ran out of steps (grazing the floor, or passing close to an object
+  // before reaching the floor) are still treated as surface hits at the last
+  // position, otherwise the floor gets holes that change shape around objects
+  var missed = depth >= MAX_DIST;
+  if (missed)
   {
     depth = MAX_DIST;
   }
 
   // rays that missed but passed right next to a surface are the silhouette
-  var outline = !hit && closest < uniforms[27];
+  var outline = missed && closest < uniforms[27];
   return march_output(color, depth, outline);
 }
 
@@ -224,24 +228,29 @@ fn march(ro: vec3f, rd: vec3f) -> march_output
 // https://iquilezles.org/articles/normalsSDF/
 fn get_normal(p: vec3f) -> vec3f
 {
-  var e = vec2f(1.0, -1.0) * 0.0005;
+  // sample offset follows the marching epsilon so normals match the surface precision
+  var h = uniforms[23];
+  var e = vec2f(1.0, -1.0) * 0.5773;
   return normalize(
-    e.xyy * scene(p + e.xyy).w +
-    e.yyx * scene(p + e.yyx).w +
-    e.yxy * scene(p + e.yxy).w +
-    e.xxx * scene(p + e.xxx).w
+    e.xyy * scene(p + e.xyy * h).w +
+    e.yyx * scene(p + e.yyx * h).w +
+    e.yxy * scene(p + e.yxy * h).w +
+    e.xxx * scene(p + e.xxx * h).w
   );
 }
 
 // https://iquilezles.org/articles/rmshadows/
 // march towards the light, the closer the ray passes to an object the darker the shadow
 // small k gives hard shadows, bigger k gives softer ones
+// res is allowed to go down to -1 (ray going inside the occluder) and is then remapped
+// with a smoothstep-like curve, this removes the banding of the classic version
 fn get_soft_shadow(ro: vec3f, rd: vec3f, tmin: f32, tmax: f32, k: f32) -> f32
 {
   var res = 1.0;
   var t = tmin;
+  var kk = max(k, 0.0001);
 
-  for (var i = 0; i < 128; i = i + 1)
+  for (var i = 0; i < 256; i = i + 1)
   {
     if (t > tmax)
     {
@@ -249,17 +258,17 @@ fn get_soft_shadow(ro: vec3f, rd: vec3f, tmin: f32, tmax: f32, k: f32) -> f32
     }
 
     var h = scene(ro + rd * t).w;
-    res = min(res, h / (max(k, 0.0001) * t));
+    res = min(res, h / (kk * t));
+    t += clamp(h, 0.005, 0.5);
 
-    if (res < 0.001)
+    if (res < -1.0)
     {
       break;
     }
-
-    t += clamp(h, 0.005, 0.5);
   }
 
-  return clamp(res, 0.0, 1.0);
+  res = max(res, -1.0);
+  return 0.25 * (1.0 + res) * (1.0 + res) * (2.0 - res);
 }
 
 fn get_AO(current: vec3f, normal: vec3f) -> f32
@@ -311,11 +320,11 @@ fn get_light(current: vec3f, obj_color: vec3f, rd: vec3f) -> vec3f
   var light_dir = normalize(light_position - current);
   var diffuse = clamp(dot(normal, light_dir), 0.0, 1.0);
 
-  // start the shadow ray a bit off the surface so it doesn't hit itself
-  var shadow = get_soft_shadow(current + normal * 0.01, light_dir, uniforms[24], uniforms[25], uniforms[21]);
+  var shadow = get_soft_shadow(current, light_dir, uniforms[24], uniforms[25], uniforms[21]);
   var ao = get_AO(current, normal);
 
-  var light = sun_color * diffuse * shadow + ambient * ao * 0.6;
+  // direct sun light (blocked by the shadow) + sky light (blocked by the occlusion)
+  var light = sun_color * diffuse * shadow + ambient * ao;
   return obj_color * light;
 }
 
@@ -328,10 +337,15 @@ fn set_camera(ro: vec3f, ta: vec3f, cr: f32) -> mat3x3<f32>
   return mat3x3<f32>(cu, cv, cw);
 }
 
-// sine wave around 0 with amplitude val
+// periodic motion with amplitude val on each axis.
+// x uses sin and y/z use cos (90 degrees out of phase), so two animated axes
+// trace a circle instead of a line: positions orbit and rotations keep turning/wobbling
+// instead of going back and forth. Each object gets its own phase from "offset".
 fn animate(val: vec3f, time_scale: f32, offset: f32) -> vec3f
 {
-  return val * sin(uniforms[0] * time_scale + offset);
+  var t = uniforms[0] * time_scale + random(vec2f(offset, val.x)) * PI;
+  var wave = vec3f(sin(t), cos(t), cos(t));
+  return val * wave;
 }
 
 @compute @workgroup_size(THREAD_COUNT, 1, 1)
@@ -351,10 +365,10 @@ fn preprocess(@builtin(global_invocation_id) id : vec3u)
   // done once per object here instead of once per pixel in scene()
   var s = shapesb[id.x];
 
-  var position = s.transform.xyz + animate(s.animate_transform.xyz, s.animate_transform.w, 0.0);
+  var position = s.transform.xyz + animate(s.animate_transform.xyz, s.animate_transform.w, f32(id.x));
 
   // rotation and its animation amplitude are both in radians
-  var angles = s.rotation.xyz + animate(s.animate_rotation.xyz, s.animate_rotation.w, 0.0);
+  var angles = s.rotation.xyz + animate(s.animate_rotation.xyz, s.animate_rotation.w, f32(id.x));
 
   shapesb[id.x].transform_animated = vec4f(position, 0.0);
   shapesb[id.x].quat = quaternion_from_euler(angles);
